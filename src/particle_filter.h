@@ -80,9 +80,10 @@ public:
 	 * @param predicted Vector of predicted landmark observations
 	 * @param observations Vector of landmark observations
 	 */
-	void dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations);
+	void dataAssociation(
+        const std::vector<LandmarkObs> &predicted,
+        std::vector<LandmarkObs>& observations);
 	
-	double multivariateGaussian(const LandmarkObs &obs_in_ws, const LandmarkObs &landmark_pt, double *std);
 
 	/**
 	 * updateWeights Updates the weights for each particle based on the likelihood of the 

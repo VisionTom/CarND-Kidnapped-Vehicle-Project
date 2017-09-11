@@ -17,6 +17,10 @@
 
 #include "particle_filter.h"
 
+#include <float.h>
+#include <assert.h>
+
+
 using namespace std;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
@@ -76,32 +80,45 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 
 }
 
-void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
-	// Find the predicted measurement that is closest to each observed measurement and assign the 
+void ParticleFilter::dataAssociation(
+    const std::vector<LandmarkObs> &predicted,
+    std::vector<LandmarkObs>& observations) {
+	// TODO: Find the predicted measurement that is closest to each observed measurement and assign the 
 	//   observed measurement to this particular landmark.
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
+    for (auto &o : observations)
+    {
+        double best_dist = FLT_MAX;
+        unsigned idx = 0;
+        // find the nearest neighbor landmark to the current observation.
+        for (auto &p : predicted)
+        {
+            double dx = p.x - o.x;
+            double dy = p.y - o.y;
+            double dist = sqrt(dx*dx + dy*dy);
 
-	for (int o_ix = 0; o_ix < observations.size(); ++o_ix)
-	{
-		double min_dist = numeric_limits<double>::max();
-		int min_ix = -1;
-		for (int p_ix = 0; p_ix < predicted.size(); ++p_ix)
-		{
-			double tmp_dist = dist(predicted[p_ix].x,predicted[p_ix].y, observations[o_ix].x, observations[o_ix].y);
-			if(tmp_dist < min_dist){
-				min_dist = tmp_dist;
-				min_ix = p_ix;
-			}
-		}
-		observations[o_ix].id = min_ix;
-	}
+            if (dist < best_dist)
+            {
+                best_dist = dist;
+                idx = p.id;
+            }
+        }
 
+        o.id = idx;
+    }
+}
+
+static double multivariateGaussian(double x, double y, double mu_x, double mu_y, double std_x, double std_y)
+{
+    double dx = x - mu_x;
+    double dy = y - mu_y;
+    return (1.0 / (2.0*M_PI*std_x*std_y)) * exp(-((dx*dx)/(2*std_x*std_x) + (dy*dy)/(2*std_y*std_y)));
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
 		std::vector<LandmarkObs> observations, Map map_landmarks) {
-	// TODO: Update the weights of each particle using a mult-variate Gaussian distribution. You can read
+	// Update the weights of each particle using a mult-variate Gaussian distribution. You can read
 	//   more about this distribution here: https://en.wikipedia.org/wiki/Multivariate_normal_distribution
 	// NOTE: The observations are given in the VEHICLE'S coordinate system. Your particles are located
 	//   according to the MAP'S coordinate system. You will need to transform between the two systems.
@@ -112,94 +129,69 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
 
-	
-	for (int pa_ix = 0; pa_ix < particles.size(); ++pa_ix)
-	{
-	 	Particle pa = particles[pa_ix];
+    assert(!observations.empty());
 
-	 	vector<LandmarkObs> predicted;
+    for (auto &p : particles)
+    {
+        std::vector<LandmarkObs> predicted;
+        for (auto &lm : map_landmarks.landmark_list)
+        {
+            double dx = lm.x_f - p.x;
+            double dy = lm.y_f - p.y;
+            double dist = sqrt(dx*dx + dy*dy);
 
-	 	//Find all landmarks in map within sensor range of a chosen Particle
-	 	for (int ma_ix = 0; ma_ix < map_landmarks.landmark_list.size(); ++ma_ix)
-	 	{
-	 		//Pick next single landmark
-	 		Map::single_landmark_s single_la = map_landmarks.landmark_list[ma_ix];
+            // Only landmarks within senor_range
+            if (dist <= sensor_range)
+                predicted.push_back({ lm.id_i, lm.x_f, lm.y_f });
+        }
 
-	 		//Calculate distance from particle to landmark and test if within sensor_range
-	 		double distance = dist(pa.x, pa.y, single_la.x_f, single_la.y_f);
+        assert(!predicted.empty());
 
-	 		if(distance <= sensor_range){
-	 			LandmarkObs pred_single;
-		        pred_single.id = single_la.id_i;
-		        pred_single.x = single_la.x_f;
-		        pred_single.y = single_la.y_f;
-		        predicted.push_back(pred_single);
-	 		}
-		}
+        std::vector<LandmarkObs> mapObs = observations;
 
-		//If no landmark in range of sensor_range -> set weight to zero
-		if (predicted.size() == 0)
-	    {
-	       particles[pa_ix].weight = 0;
-	    }
-	    else
-	    {
-	    	//Transform observation from vehicle coordinates in map coordinates
-	      	vector<LandmarkObs> observations_map;
-	        observations_map.resize(observations.size());
-	        for (int j = 0; j < observations_map.size(); j++)
-	        {
-	        	observations_map[j].x = pa.x + observations[j].x*cos(pa.theta) - observations[j].y*sin(pa.theta);
-	        	observations_map[j].y = pa.y + observations[j].x*sin(pa.theta) + observations[j].y*cos(pa.theta);
-	        }
+        // Convert into Map Coordinates
+        for (auto &o : mapObs)
+        {
+            double xm = p.x + cos(p.theta) * o.x - sin(p.theta) * o.y;
+            double ym = p.y + sin(p.theta) * o.x + cos(p.theta) * o.y;
 
-	        //Find the predicted measurement that is closest to each observed measurement
-	        dataAssociation(predicted, observations_map);
-	        double pa_weight = 1;
+            o.x = xm;
+            o.y = ym;
+        }
 
-	        //Calculate weights
-	        for (int i = 0; i < observations_map.size(); i++)
-	        {
-	        	/*
-	        	double tmp = 0;
-	        	int p_ix = observations[i].id;
-	        	double const x_o = observations_map[i].x;
-	        	double const y_o = observations_map[i].x;
-	        	double const x_p = predicted[p_ix].x;
-	        	double const y_p = predicted[p_ix].x;
+        dataAssociation(predicted, mapObs);
 
-	        	tmp = (x_o - x_p)*(x_o - x_p)/(std_x*std_x) + (y_o - y_p)*(y_o - y_p)/(std_y*std_y);*/
+        
+        {
+            std::vector<int> assocs;
+            std::vector<double> sense_x;
+            std::vector<double> sense_y;
+            for (auto &o : mapObs)
+            {
+                assocs.push_back(o.id);
+                sense_x.push_back(o.x);
+                sense_y.push_back(o.y);
+            }
+            p = SetAssociations(p, assocs, sense_x, sense_y);
+        }
 
-	        	int p_ix = observations[i].id;
-	        	const double obs_weight = multivariateGaussian(observations_map[i], predicted[p_ix], std_landmark);
-	        	pa_weight *= obs_weight;
-	        }
-	        particles[pa_ix].weight = pa_weight;
-	    }
-	}
-}
+        // Calculate new weight by the product of gaussians.
+        double w = 1.;
+        for (auto &o : mapObs)
+        {
+            unsigned lm_idx = o.id - 1;
+            assert(lm_idx >= 0 && lm_idx < map_landmarks.landmark_list.size());
+            double x = o.x;
+            double y = o.y;
+            double mu_x = map_landmarks.landmark_list[lm_idx].x_f;
+            double mu_y = map_landmarks.landmark_list[lm_idx].y_f;
+            double std_x = std_landmark[0];
+            double std_y = std_landmark[1];
+            w *= multivariateGaussian(x, y, mu_x, mu_y, std_x, std_y);
+        }
 
-double ParticleFilter::multivariateGaussian(const LandmarkObs &obs_in_ws, const LandmarkObs &landmark_pt, double *std)
-{
-	// calculate multivariate Gaussian
-	// e = ((x - mu_x) ** 2 / (2.0 * std_x ** 2)) + ((y - mu_y) ** 2 / (2.0 * std_y ** 2))
-	// e = ((diff_x ** 2) / (2.0 * std_x ** 2)) + ((diff_y ** 2) / (2.0 * std_y ** 2))
-	const double std_x = std[0];
-	const double std_y = std[1];
-
-	const double diff_x = obs_in_ws.x - landmark_pt.x;
-	const double diff_y = obs_in_ws.y - landmark_pt.y;
-	const double diff_x_2 = diff_x * diff_x;
-	const double diff_y_2 = diff_y * diff_y;
-
-	const double var_x = std_x * std_x;
-	const double var_y = std_y * std_y;
-
-	const double exponent = diff_x_2 / (2.0 * var_x) + diff_y_2 / (2.0 * var_y);
-	const double exp_exponent = exp(-exponent);
-			
-	const double gauss_norm = 1.0 / (2.0 * M_PI * std_x * std_y);
-	return gauss_norm * exp_exponent;
+        p.weight = w;
+    }
 }
 
 void ParticleFilter::resample() {
@@ -220,7 +212,6 @@ void ParticleFilter::resample() {
 
     particles = newParticles;
 }
-
 
 Particle ParticleFilter::SetAssociations(Particle particle, std::vector<int> associations, std::vector<double> sense_x, std::vector<double> sense_y)
 {
