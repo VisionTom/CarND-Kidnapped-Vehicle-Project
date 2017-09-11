@@ -47,6 +47,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 		
 		particles.push_back(p);			
 	}
+	is_initialized = true;
 
 }
 
@@ -176,11 +177,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	        particles[pa_ix].weight = pa_weight;
 	    }
 	}
-
-		//Observation in Vehicle Coordinates - Map_Landmarks und Particles in Map Coordinates
-
-	//Update weights
-	// *** Benutze dataAssociation
 }
 
 double ParticleFilter::multivariateGaussian(const LandmarkObs &obs_in_ws, const LandmarkObs &landmark_pt, double *std)
@@ -211,18 +207,20 @@ void ParticleFilter::resample() {
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
 
-  std::discrete_distribution<> d(weights.begin(), weights.end());
+    std::vector<double> weights;
+    for (auto &p : particles)
+        weights.push_back(p.weight);
 
-  vector<Particle> particles_new;
-  particles_new.resize(particles.size());
+    default_random_engine gen;
+    std::discrete_distribution<> d(weights.begin(), weights.end());
 
-  for (int i = 0; i < particles.size(); i++)
-  {
-    particles_new[i] = particles[d(gen)];
-  }
+    std::vector<Particle> newParticles;
+    for (unsigned i = 0; i < particles.size(); i++)
+        newParticles.push_back(particles[d(gen)]);
 
-  particles = particles_new;
+    particles = newParticles;
 }
+
 
 Particle ParticleFilter::SetAssociations(Particle particle, std::vector<int> associations, std::vector<double> sense_x, std::vector<double> sense_y)
 {
