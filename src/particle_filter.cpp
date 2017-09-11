@@ -61,6 +61,12 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
 
+	//Avoid division by zero
+	if (fabs(yaw_rate) < 0.000001)
+	{
+		yaw_rate = 0.000001;
+	}
+
 	for (int i = 0; i < num_particles; ++i)
 	{
 		//Add measurements to each particle
