@@ -39,7 +39,9 @@ class ParticleFilter {
 	std::vector<double> weights;
 	
 public:
-	
+	//random number engine for generating random Gaussian noise.
+	std::default_random_engine gen;
+
 	// Set of current particles
 	std::vector<Particle> particles;
 
